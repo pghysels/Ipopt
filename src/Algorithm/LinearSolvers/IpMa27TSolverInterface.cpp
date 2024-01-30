@@ -8,6 +8,14 @@
 #include "IpMa27TSolverInterface.hpp"
 
 #include <cmath>
+#include <sstream>
+#include <fstream>
+#include <numeric>
+#include <iomanip>
+
+#if defined(QD_IR)
+#include <qd/qd_real.h>
+#endif
 
 #ifdef IPOPT_HAS_HSL
 #include "CoinHslConfig.h"
@@ -78,6 +86,13 @@ Ma27TSolverInterface::~Ma27TSolverInterface()
    delete[] iw_;
    delete[] ikeep_;
    delete[] a_;
+
+#if defined(QD_IR)
+   delete[] airn_orig_;
+   delete[] ajcn_orig_;
+   delete[] a_orig_;
+#endif
+
 }
 
 void Ma27TSolverInterface::RegisterOptions(
@@ -543,6 +558,18 @@ ESymSolverStatus Ma27TSolverInterface::Factorization(
    Index INFO[20];
    cntl_[0] = pivtol_;  // Set pivot tolerance
 
+#if defined(QD_IR)
+   NZ_orig_ = NZ;
+   airn_orig_ = new Index[NZ];
+   ajcn_orig_ = new Index[NZ];
+   a_orig_ = new Number[NZ];
+   std::copy(airn, airn+NZ, airn_orig_);
+   std::copy(ajcn, ajcn+NZ, ajcn_orig_);
+   std::copy(a_, a_+NZ, a_orig_);
+#endif
+   //////////////////////////////////////////////////////////////////////
+
+
    ma27b(&N, &NZ, airn, ajcn, a_, &la_, iw_, &liw_, ikeep_, &nsteps_, &maxfrt_, IW1, icntl_, cntl_, INFO);
    delete[] IW1;
 
@@ -667,6 +694,333 @@ ESymSolverStatus Ma27TSolverInterface::Factorization(
    return SYMSOLVER_SUCCESS;
 }
 
+#if defined(QD_IR)
+template<typename it> qd_real qd_norm(const it v0, const it v1) {
+  qd_real nrm(0.);
+  for (auto v=v0; v!=v1; v++)
+    nrm += qd_real(*v)*qd_real(*v);
+  return sqrt(nrm);
+};
+
+template<typename T> qd_real qd_norm(const std::vector<T>& v) {
+  return qd_norm(v.cbegin(), v.cend());
+};
+
+qd_real qd_dot(const std::vector<qd_real>& a,
+               const std::vector<qd_real>& b) {
+  return std::inner_product
+    (a.cbegin(), a.cend(), b.cbegin(), qd_real(0));
+}
+
+template<typename T>
+void qd_axpy(qd_real alpha, const std::vector<T>& x,
+             std::vector<qd_real>& y) {
+  for (std::size_t i=0; i<x.size(); i++)
+    y[i] += alpha * qd_real(x[i]);
+}
+
+void to_Number(const std::vector<qd_real>& a, Number* b) {
+  // TODO what if Number != double ?
+  for (std::size_t i=0; i<a.size(); i++)
+    b[i] = to_double(a[i]);
+}
+
+template<typename SPMV>
+void qd_residual(const SPMV& spmv, const std::vector<qd_real>& x,
+                 const Number* b, std::vector<qd_real>& r) {
+  spmv(x, r);
+  for (std::size_t i=0; i<x.size(); i++)
+    r[i] = qd_real(b[i]) - r[i];
+}
+
+template<typename SPMV, typename PREC>
+void qd_refinement(Index N, const SPMV& spmv, const PREC& prec, Number* b) {
+  qd_real tol("1e-60"), r_nrm_old(0), b_nrm = qd_norm(b, b+N);
+  std::vector<qd_real> r(N), x(N, qd_real(0.)), x_old(N);
+  r.assign(b, b+N);
+  int maxit = 20;
+  for (int ref=0; ref<maxit; ref++) {
+    prec(r);
+    if (ref > 1) x_old = x;
+    qd_axpy(qd_real(1.), r, x);
+    auto e_nrm = qd_norm(r);
+    qd_residual(spmv, x, b, r);
+    auto r_nrm = qd_norm(r);
+    auto r_nrm_rel_b = r_nrm / b_nrm;
+    auto print_IR = [&]() {
+      std::cout << " it " << ref << " ||e||= " << e_nrm
+                << " ||r||= " << r_nrm
+                << " ||r||/||b||= " << r_nrm_rel_b << std::endl;
+    };
+    print_IR();
+    if (ref > 0 && r_nrm > r_nrm_old) {
+      x = x_old;
+      r_nrm_old = r_nrm;
+      std::cout << "QDIR divergence!";
+      print_IR();
+      break;
+    }
+    if (e_nrm <= tol || r_nrm_rel_b <= tol) {
+      print_IR();
+      break;
+    }
+    if (ref == maxit-1) {
+      std::cout << "QDIR max-iterations!";
+      print_IR();
+      break;
+    }
+    r_nrm_old = r_nrm;
+  }
+  to_Number(x, b);
+}
+
+/*
+ * right preconditioned flexible GMRES
+ * https://www-users.cse.umn.edu/~saad/PDF/umsi-91-279.pdf
+ *
+ * We want this to be flexible because the rounding is not linear?
+ */
+template<typename SPMV, typename PREC>
+void qd_gmres(Index N, const SPMV& spmv, const PREC& prec, Number* b) {
+  int m = 10, maxit = 100, totit = 0, ldh = m + 1;
+  if (m > maxit) m = maxit;
+  bool no_conv = true;
+  qd_real tol("1e-60"), rho0(0.);
+  std::vector<qd_real> x(N);
+  while (no_conv) {
+    std::vector<qd_real> givens_c(m), givens_s(m),
+      b_(m+1), hess(m*(m+1));
+    std::vector<std::vector<qd_real>> V, Z;
+    V.emplace_back(N);
+    qd_residual(spmv, x, b, V[0]);
+    auto rho = qd_norm(V[0]);
+    if (totit == 0) rho0 = rho;
+    if (rho/rho0 < tol || rho < tol) { no_conv = false; break; }
+    for (Index i=0; i<N; i++)
+      V[0][i] /= rho;
+    b_[0] = rho;
+    for (int i=1; i<=m; i++)
+      b_[i] = qd_real(0.);
+    int nrit = m - 1;
+    // std::cout << "GMRES it. " << totit << "\tres = "
+    //           << std::setw(12) << rho
+    //           << "\trel.res = " << std::setw(12)
+    //           << rho/rho0 << "\t restart!" << std::endl;
+    // for (int it=0; it<m; it++) {
+    for (int it=0; it<m; it++) {
+      totit++;
+      Z.emplace_back(V[it]);
+      prec(Z[it]);
+      V.emplace_back(N);
+      spmv(Z[it], V[it+1]);
+      for (int k=0; k<=it; k++) {
+        hess[k+it*ldh] = qd_dot(V[k], V[it+1]);
+        qd_axpy(-hess[k+it*ldh], V[k], V[it+1]);
+      }
+      hess[it+1+it*ldh] = qd_norm(V[it+1]);
+      for (Index i=0; i<N; i++)
+        V[it+1][i] /= hess[it+1+it*ldh];
+      for (int k=1; k<it+1; k++) {
+        qd_real gamma = givens_c[k-1]*hess[k-1+it*ldh]
+          + givens_s[k-1]*hess[k+it*ldh];
+        hess[k+it*ldh] = -givens_s[k-1]*hess[k-1+it*ldh]
+          + givens_c[k-1]*hess[k+it*ldh];
+        hess[k-1+it*ldh] = gamma;
+      }
+      qd_real delta =
+        sqrt(hess[it+it*ldh]*hess[it+it*ldh] +
+             hess[it+1+it*ldh]*hess[it+1+it*ldh]);
+      givens_c[it] = hess[it+it*ldh] / delta;
+      givens_s[it] = hess[it+1+it*ldh] / delta;
+      hess[it+it*ldh] = givens_c[it]*hess[it+it*ldh]
+        + givens_s[it]*hess[it+1+it*ldh];
+      b_[it+1] = -givens_s[it]*b_[it];
+      b_[it] = givens_c[it]*b_[it];
+      rho = abs(b_[it+1]);
+      // std::cout << "GMRES it. " << totit << "\tres = "
+      //           << std::setw(12) << rho
+      //           << "\trel.res = " << std::setw(12)
+      //           << rho/rho0 << std::endl;
+      if ((rho < tol) || (rho/rho0 < tol) || (totit >= maxit)) {
+        no_conv = false;
+        nrit = it;
+        break;
+      }
+    }
+    for (int k=nrit; k>=0; k--) {
+      for (int i=k+1; i<=nrit; i++)
+        b_[k] -= hess[k+i*ldh]*b_[i];
+      b_[k] /= hess[k+k*ldh];
+    }
+    for (int i=0; i<=nrit; i++)
+      qd_axpy(b_[i], Z[i], x);
+  }
+  std::vector<qd_real> res(N);
+  qd_residual(spmv, x, b, res);
+  std::cout << "QD-FGMRES it= " << totit
+            << " ||r||= " << qd_norm(res) << std::endl;
+  to_Number(x, b);
+}
+
+
+/*
+ * https://citeseerx.ist.psu.edu/document?repid=rep1&type=pdf&doi=f4883283029848a402f6200d963941ea5bba6f1c
+ */
+template<typename SPMV, typename PREC>
+void qd_minres2(Index N, const SPMV& spmv, const PREC& prec, Number* b) {
+  std::vector<qd_real> v_1(N), v(N), w_1(N), w(N), x(N), Av(N);
+  v.assign(b, b+N);
+  prec(v);
+  int maxit = 20;
+  std::vector<qd_real> beta(maxit+1), gamma(maxit+2), sigma(maxit+2);
+  beta[0] = qd_norm(v);
+  auto eta = beta[0];
+  gamma[0] = gamma[1] = qd_real(1.);
+  qd_real tol("1e-60");
+  for (int it=0; it<maxit; it++) {
+    for (Index i=0; i<N; i++)
+      v[i] /= beta[it];
+    spmv(v, Av);
+    prec(Av);
+    auto alpha = qd_dot(v, Av);
+    for (Index i=0; i<N; i++)
+      v_1[i] = Av[i] - alpha*v[i] - beta[it]*v_1[i];
+    std::swap(v_1, v);
+    beta[it+1] = qd_norm(v);
+    auto delta = gamma[it+1]*alpha - gamma[it]*sigma[it+1]*beta[it];
+    auto rho1 = sqrt(delta*delta + beta[it+1]*beta[it+1]);
+    auto rho2 = sigma[it+1]*alpha + gamma[it]*gamma[it+1]*beta[it];
+    auto rho3 = sigma[it]*beta[it];
+    gamma[it+2] = delta / rho1;
+    sigma[it+2] = beta[it] / rho1;
+    for (Index i=0; i<N; i++)
+      w_1[i] = (v[i] - rho3*w_1[i] - rho2*w[i]) / rho1;
+    std::swap(w_1, w);
+    qd_axpy(gamma[it+2]*eta, w, x);
+    eta *= sigma[it+2];
+    qd_residual(spmv, x, b, Av);
+    auto r_nrm = qd_norm(Av);
+    std::cout << "QD-MINRES it= " << it
+              << " eta= " << eta
+              << " gamma[it+2]*eta= " << gamma[it+2]*eta
+              << " ||r||= " << r_nrm << std::endl;
+    if (eta < tol) break;
+  }
+  to_Number(x, b);
+}
+
+
+/*
+ * https://en.wikipedia.org/wiki/Minimal_residual_method
+ */
+template<typename SPMV, typename PREC>
+void qd_minres(Index N, const SPMV& spmv, const PREC& prec, Number* b) {
+  std::vector<qd_real> r(N), s0(N), x(N);
+  r.assign(b, b+N);
+  prec(r);
+  auto p0 = r;
+  spmv(p0, s0);
+  prec(s0);
+  auto p1 = p0;
+  auto s1 = s0;
+  qd_real tol("1e-60"), rho, b_nrm = qd_norm(b, b+N);
+  int maxit = 20;
+  for (int it=0; it<maxit; it++) {
+    auto p2 = p1;  p1 = p0;
+    auto s2 = s1;  s1 = s0;
+    auto rho_old = rho;
+    rho = qd_dot(s1, s1);
+    auto alpha = qd_dot(r, s1) / rho;
+    // if (rho < tol) {
+    //   std::cout << "MINRES breakdown, rho= " << rho
+    //             << " alpha= " << alpha << std::endl;
+    //   break;
+    // }
+    qd_axpy(alpha, p1, x);
+    qd_axpy(-alpha, s1, r);
+    auto r_nrm_prec = sqrt(qd_dot(r, r));
+    qd_residual(spmv, x, b, p0);
+    auto r_nrm = qd_norm(p0);
+    auto print_MINRES = [&]() {
+      std::cout << " it " << it
+                << " ||Mb-MAx||= " << r_nrm_prec << " ||b-Ax||= " << r_nrm
+                << " ||r||/||b||= " << r_nrm / b_nrm << std::endl;
+    };
+    print_MINRES();
+    if (r_nrm_prec < tol) {
+      std::cout << "MINRES convergence!";
+      print_MINRES();
+      break;
+    }
+    if (it == maxit - 1) {
+      std::cout << "MINRES maxit!";
+      print_MINRES();
+      break;
+    }
+    p0 = s1;
+    spmv(s1, s0);
+    prec(s0);
+    auto beta1 = qd_dot(s0, s1) / qd_dot(s1, s1);
+    qd_axpy(-beta1, p1, p0);
+    qd_axpy(-beta1, s1, s0);
+    if (it > 1) {
+      auto beta2 = qd_dot(s0, s2) / qd_dot(s2, s2);
+      qd_axpy(-beta2, p2, p0);
+      qd_axpy(-beta2, s2, s0);
+    }
+  }
+  to_Number(x, b);
+}
+
+void qd_getrs(Index N, Index NZ,
+              Index* ridx, Index* cidx, Number* val,
+              Number* b) {
+  qd_real tol("1e-60");
+  std::vector<qd_real> x(N), A(N*N);
+  for (Index i=0; i<NZ; i++) {
+    auto row = ridx[i] - 1;
+    auto col = cidx[i] - 1;
+    A[row+col*N] += qd_real(val[i]);
+    if (row != col)
+      A[col+row*N] += qd_real(val[i]);
+  }
+  std::vector<Index> P(N);
+  std::iota(P.begin(), P.end(), 0);
+  for (Index i=0; i<N; i++) {
+    qd_real maxA(0.), absA;
+    Index imax = i;
+    for (Index k=i; k<N; k++)
+      if ((absA = fabs(A[k+i*N])) > maxA) {
+        maxA = absA;
+        imax = k;
+      }
+    if (maxA < tol)
+      std::cout << "QD-LU: matrix is singular" << std::endl;
+    if (imax != i) {
+      std::swap(P[i], P[imax]);
+      for (Index k=0; k<N; k++)
+        std::swap(A[i+k*N], A[imax+k*N]);
+    }
+    for (Index j=i+1; j<N; j++) {
+      A[j+i*N] /= A[i+i*N];
+      for (Index k=i+1; k<N; k++)
+        A[j+k*N] -= A[j+i*N] * A[i+k*N];
+    }
+  }
+  for (Index i=0; i<N; i++) {
+    x[i] = qd_real(b[P[i]]);
+    for (Index k=0; k<i; k++)
+      x[i] -= A[i+k*N] * x[k];
+  }
+  for (Index i=N-1; i>=0; i--) {
+    for (Index k=i+1; k<N; k++)
+      x[i] -= A[i+k*N] * x[k];
+    x[i] /= A[i+i*N];
+  }
+  to_Number(x, b);
+}
+#endif
+
 ESymSolverStatus Ma27TSolverInterface::Backsolve(
    Index   nrhs,
    Number* rhs_vals
@@ -693,7 +1047,41 @@ ESymSolverStatus Ma27TSolverInterface::Backsolve(
             DBG_PRINT((2, "rhs[%5d] = %23.15e\n", i, rhs_vals[irhs * dim_ + i]));
          }
       }
+#if defined(QD_IR)
+      unsigned int oldcw;
+      fpu_fix_start(&oldcw);
+
+      auto prec = [&](std::vector<qd_real>& v) {
+        std::vector<Number> tmp(v.size());
+        to_Number(v, tmp.data());
+        ma27c(&N, a_, &la_, iw_, &liw_, W, &maxfrt_, tmp.data(), IW1, &nsteps_, icntl_, INFO);
+        v.assign(tmp.cbegin(), tmp.cend());
+      };
+      auto spmv = [&](const std::vector<qd_real>& x,
+                      std::vector<qd_real>& y) {
+        for (auto& yi : y)
+          yi = qd_real(0.);
+        for (Index i=0; i<NZ_orig_; i++) {
+          auto row = airn_orig_[i] - 1;
+          auto col = ajcn_orig_[i] - 1;
+          y[row] += qd_real(a_orig_[i]) * x[col];
+          if (row != col)
+            y[col] += qd_real(a_orig_[i]) * x[row];
+        }
+      };
+
+      Number* b = &rhs_vals[irhs * dim_];
+
+      // qd_getrs(N, NZ_orig_, airn_orig_, ajcn_orig_, a_orig_, b);
+      qd_gmres(N, spmv, prec, b);
+      // qd_minres(N, spmv, prec, b);
+      // qd_minres2(N, spmv, prec, b);
+      // qd_refinement(N, spmv, prec, b);
+
+      fpu_fix_end(&oldcw);
+#else
       ma27c(&N, a_, &la_, iw_, &liw_, W, &maxfrt_, &rhs_vals[irhs * dim_], IW1, &nsteps_, icntl_, INFO);
+#endif
       if( DBG_VERBOSITY() >= 2 )
       {
          for( Index i = 0; i < dim_; i++ )

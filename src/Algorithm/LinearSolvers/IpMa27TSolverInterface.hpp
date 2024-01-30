@@ -263,6 +263,14 @@ private:
    /** factor A of matrix */
    Number* a_;
 
+#if defined(QD_IR)
+  /** copy of sparse matrix, used in IR */
+   Index NZ_orig_;
+   Index* airn_orig_ = nullptr;
+   Index* ajcn_orig_ = nullptr;
+   Number* a_orig_ = nullptr;
+#endif
+
    /** flag indicating that la should be increased before next factorization */
    bool la_increase_;
    /** flag indicating that liw should be increased before next factorization */
