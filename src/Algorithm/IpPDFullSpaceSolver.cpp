@@ -975,7 +975,7 @@ void PDFullSpaceSolver::ComputeResiduals(
 
    // d
    J_d.MultVector(1., *res.x(), 0., *resid.y_d_NonConst());
-   resid.y_d_NonConst()->AddTwoVectors(alpha, *res.s(), beta, *rhs.y_d(), alpha);
+   resid.y_d_NonConst()->AddTwoVectors(-alpha, *res.s(), beta, *rhs.y_d(), alpha);
    if( delta_d != 0. )
    {
       resid.y_d_NonConst()->Axpy(-alpha*delta_d, *res.y_d());
