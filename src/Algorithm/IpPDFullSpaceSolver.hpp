@@ -224,6 +224,42 @@ private:
       Vector&       X
    );
    ///@}
+
+   bool SolveGMRES(
+      Number                alpha,
+      Number                beta,
+      const IteratesVector& rhs,
+      IteratesVector&       res,
+      bool                  allow_inexact = false,
+      bool                  improve_solution = false
+   );
+
+   bool GMRES(
+      const SymMatrix&      W,
+      const Matrix&         J_c,
+      const Matrix&         J_d,
+      const Matrix&         Px_L,
+      const Matrix&         Px_U,
+      const Matrix&         Pd_L,
+      const Matrix&         Pd_U,
+      const Vector&         z_L,
+      const Vector&         z_U,
+      const Vector&         v_L,
+      const Vector&         v_U,
+      const Vector&         slack_x_L,
+      const Vector&         slack_x_U,
+      const Vector&         slack_s_L,
+      const Vector&         slack_s_U,
+      const Vector&         sigma_x,
+      const Vector&         sigma_s,
+      const IteratesVector& rhs,
+      IteratesVector&       res,
+      IteratesVector&       resid,
+      bool                  improve_solution,
+      bool                  resolve_with_better_quality,
+      bool                  pretend_singular,
+      bool&                 solve_retval
+   );
 };
 
 } // namespace Ipopt
