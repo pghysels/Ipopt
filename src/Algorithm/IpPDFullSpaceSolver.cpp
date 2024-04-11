@@ -1102,9 +1102,10 @@ bool PDFullSpaceSolver::GMRES(
    auto NullVec = res.MakeNewIteratesVectorCopy();
    NullVec->Set( 0. );
 
-   int restart = 500, totit = 0, ldH = restart + 1;
+   Index restart = 10;
    if (restart > max_refinement_steps_)
      restart = max_refinement_steps_;
+   Index totit = 0, ldH = restart + 1;
    bool done = false;
    Number tol = residual_ratio_max_, rho0 = 0., rho;
    while ( !done )
@@ -1155,7 +1156,7 @@ bool PDFullSpaceSolver::GMRES(
          V[it+1]->Set( 0. );
          ComputeResiduals(W, J_c, J_d, Px_L, Px_U, Pd_L, Pd_U, z_L, z_U, v_L, v_U, slack_x_L, slack_x_U,
                           slack_s_L, slack_s_U, sigma_x, sigma_s, -1., 1., *NullVec, *Z[it], *V[it+1]);
-         // for( Index reps=0; reps<2; reps++ )
+         for( Index reps=0; reps<2; reps++ )
          {
             for( Index k=0; k<=it; k++ )
             {
@@ -1210,7 +1211,6 @@ bool PDFullSpaceSolver::GMRES(
    if ( totit < max_refinement_steps_ &&
         ( resid.Nrm2() / rhs.Nrm2() < tol ) )
    {
-      std::cout << "Accepting GMRES solution" << std::endl;
       res.Copy( *x );
       return true;
    }
@@ -1218,7 +1218,6 @@ bool PDFullSpaceSolver::GMRES(
    {
       return false;
    }
-   //return totit < max_refinement_steps_;
 }
 
 } // namespace Ipopt
