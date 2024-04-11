@@ -1156,12 +1156,19 @@ bool PDFullSpaceSolver::GMRES(
          V[it+1]->Set( 0. );
          ComputeResiduals(W, J_c, J_d, Px_L, Px_U, Pd_L, Pd_U, z_L, z_U, v_L, v_U, slack_x_L, slack_x_U,
                           slack_s_L, slack_s_U, sigma_x, sigma_s, -1., 1., *NullVec, *Z[it], *V[it+1]);
-         for( Index reps=0; reps<2; reps++ )
          {
             for( Index k=0; k<=it; k++ )
             {
                H[k+it*ldH] = V[it+1]->Dot( *V[k] );
                V[it+1]->Axpy( -H[k+it*ldH], *V[k] );
+            }
+         }
+         {  // second time for numerical stability, ToDo optional?
+            for( Index k=0; k<=it; k++ )
+            {
+              auto tmp = V[it+1]->Dot( *V[k] );
+              H[k+it*ldH] += tmp;
+              V[it+1]->Axpy( -tmp, *V[k] );
             }
          }
          H[it+1+it*ldH] = V[it+1]->Nrm2();
