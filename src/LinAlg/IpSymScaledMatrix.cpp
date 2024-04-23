@@ -70,6 +70,14 @@ void SymScaledMatrix::ComputeRowAMaxImpl(
    THROW_EXCEPTION(UNIMPLEMENTED_LINALG_METHOD_CALLED, "SymScaledMatrix::ComputeRowAMaxImpl not implemented");
 }
 
+void SymScaledMatrix::ComputeRowA1Impl(
+   Vector& /*rows_norms*/,
+   bool    /*init*/
+) const
+{
+   THROW_EXCEPTION(UNIMPLEMENTED_LINALG_METHOD_CALLED, "SymScaledMatrix::ComputeRowA1Impl not implemented");
+}
+
 void SymScaledMatrix::PrintImpl(
    const Journalist&  jnlst,
    EJournalLevel      level,
