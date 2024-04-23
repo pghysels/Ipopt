@@ -1230,30 +1230,15 @@ bool PDFullSpaceSolver::GMRES(
          rho0 = rho;
       }
       Number resid_nrm_max = resid.Amax();
-      // norm-wise relative backward error, in 2 or Inf norm
-      // Number NRBE_2 = rho / ( A_nrm_inf * x->Nrm2() + b_nrm_2 );
+      // norm-wise relative backward error
       Number NRBE_inf = resid_nrm_max / ( A_nrm_inf * x->Amax() /*+ b_nrm_max*/ );
-      // Number NRBE_inf = ComputeResidualRatio(rhs, *x, *V[0], A_nrm_inf);
-      // auto abs_resid = V[0]->MakeNewIteratesVectorCopy();
-      // auto abs_rhs = rhs.MakeNewIteratesVectorCopy();
-      // auto abs_x = x->MakeNewIteratesVectorCopy();
-      // abs_resid->ElementWiseAbs();
-      // abs_rhs->ElementWiseAbs();
-      // abs_x->ElementWiseAbs();
-      // abs_rhs->Axpy(A_nrm_inf, *abs_x);
-      // abs_rhs->AddScalar(Number(1.e-16));
-      // abs_resid->ElementWiseDivide(*abs_rhs);
-      // Number CRBE = abs_resid->Amax();
       std::cout << "GMRES it. "           << totit
-                // << "  NRBE_2= "            << std::setw(8) << NRBE_2
                 << "  NRBE_inf= "          << std::setw(8) << NRBE_inf
-                // << "  CRBE= "              << std::setw(8) << CRBE
                 << "  ||r||2= "            << std::setw(8) << rho
                 << "  ||r||2/||b||2= "     << std::setw(8) << rho / b_nrm_2
                 << "  ||r||Inf= "          << std::setw(8) << resid_nrm_max
                 << "  ||r||Inf/||b||Inf= " << std::setw(8) << resid_nrm_max / b_nrm_max
                 << "  ||A||Inf= "          << std::setw(8) << A_nrm_inf
-                // << "  ||b||Inf= "          << std::setw(8) << b_nrm_max
                 << std::endl;
       if( NRBE_inf < tol && totit >= min_refinement_steps_)
       {
@@ -1263,7 +1248,6 @@ bool PDFullSpaceSolver::GMRES(
       }
       V[0]->Scal( 1./rho );
       b_[0] = rho;
-      // int nrit = restart - 1;
       for( Index it = 0; it < restart; it++ )
       {
          totit++;
@@ -1324,26 +1308,13 @@ bool PDFullSpaceSolver::GMRES(
                           slack_s_L, slack_s_U, sigma_x, sigma_s, -1., 1., rhs, *x, resid);
          Number resid_nrm_2 = resid.Nrm2();
          resid_nrm_max = resid.Amax();
-         // NRBE_2 = resid_nrm_2 / ( A_nrm_inf * x->Nrm2() + b_nrm_2 );
          NRBE_inf = resid_nrm_max / ( A_nrm_inf * x->Amax() /*+ b_nrm_max*/ );
-         // NRBE_inf = ComputeResidualRatio(rhs, *x, resid, A_nrm_inf);
-         // abs_resid->Copy( resid );
-         // abs_x->Copy( *x );
-         // abs_resid->ElementWiseAbs();
-         // abs_x->ElementWiseAbs();
-         // abs_rhs->Axpy(A_nrm_inf, *abs_x);
-         // abs_rhs->AddScalar(Number(1.e-16));
-         // abs_resid->ElementWiseDivide(*abs_rhs);
-         // Number CRBE = abs_resid->Amax();
          std::cout << "GMRES it. "           << totit
-                   // << "  NRBE_2= "            << std::setw(8) << NRBE_2
                    << "  NRBE_inf= "          << std::setw(8) << NRBE_inf
-                   // << "  CRBE= "              << std::setw(8) << CRBE
                    << "  ||r||2= "            << std::setw(8) << resid_nrm_2
                    << "  ||r||2/||b||2= "     << std::setw(8) << resid_nrm_2 / b_nrm_2
                    << "  ||r||Inf= "          << std::setw(8) << resid_nrm_max
                    << "  ||r||Inf/||b||Inf= " << std::setw(8) << resid_nrm_max / b_nrm_max
-                   // << "  rho= "               << std::setw(8) << rho
                    << std::endl;
          if( (NRBE_inf < tol && totit >= min_refinement_steps_) ||
              (totit >= max_refinement_steps_) )
