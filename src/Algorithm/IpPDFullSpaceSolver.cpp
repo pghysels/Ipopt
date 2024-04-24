@@ -401,7 +401,7 @@ bool PDFullSpaceSolver::SolveGMRES(
    bool                  improve_solution /* = false */
 )
 {
-   DBG_START_METH("PDFullSpaceSolver::Solve", dbg_verbosity);
+   DBG_START_METH("PDFullSpaceSolver::SolveGMRES", dbg_verbosity);
    DBG_ASSERT(!allow_inexact || !improve_solution);
    DBG_ASSERT(!improve_solution || beta == 0.);
 
@@ -1075,11 +1075,13 @@ Number PDFullSpaceSolver::ComputeResidualRatio(
    }
    else
    {
-      // ToDo: determine how to include norm of matrix, and what
-      // safeguard to use against incredibly large solution vectors
-      Number max_cond = 1e6;
-      return nrm_resid / (Min(nrm_res, max_cond * nrm_rhs) + nrm_rhs);
-      // return nrm_resid / (AInfNrm * nrm_res /*+ nrm_rhs*/ );
+     /* Compute the Inf-norm-wise relative backward error
+        See:
+        Nicholas J. Higham. Accuracy and Stability of Numerical
+        Algorithms. Society for Industrial and Applied Mathematics,
+        Philadelphia, PA, USA, second edition, 2002.
+     */
+     return nrm_resid / (AInfNrm * nrm_res + nrm_rhs );
    }
 }
 
@@ -1193,12 +1195,8 @@ bool PDFullSpaceSolver::GMRES(
 {
    DBG_START_METH("PDFullSpaceSolver::GMRES", dbg_verbosity);
 
-   const auto default_precision{std::cout.precision()};
-   std::cout << std::setprecision(3);
-
+   // ToDO work on res directly ?
    auto x = res.MakeNewIteratesVectorCopy();
-   auto NullVec = res.MakeNewIteratesVectorCopy();
-   NullVec->Set( 0. );
 
    // Index restart = 10;
    // if (restart > max_refinement_steps_)
@@ -1229,17 +1227,29 @@ bool PDFullSpaceSolver::GMRES(
       {
          rho0 = rho;
       }
-      Number resid_nrm_max = resid.Amax();
-      // norm-wise relative backward error
-      Number NRBE_inf = resid_nrm_max / ( A_nrm_inf * x->Amax() /*+ b_nrm_max*/ );
-      std::cout << "GMRES it. "           << totit
-                << "  NRBE_inf= "          << std::setw(8) << NRBE_inf
-                << "  ||r||2= "            << std::setw(8) << rho
-                << "  ||r||2/||b||2= "     << std::setw(8) << rho / b_nrm_2
-                << "  ||r||Inf= "          << std::setw(8) << resid_nrm_max
-                << "  ||r||Inf/||b||Inf= " << std::setw(8) << resid_nrm_max / b_nrm_max
-                << "  ||A||Inf= "          << std::setw(8) << A_nrm_inf
-                << std::endl;
+
+      // norm-wise relative backward error, Inf norm
+      Number NRBE_inf = ComputeResidualRatio( rhs, *x, *V[0], A_nrm_inf );
+
+      if( Jnlst().ProduceOutput(J_DETAILED, J_LINEAR_ALGEBRA) )
+      {
+         Number resid_nrm_max = resid.Amax();
+         Jnlst().Printf(J_DETAILED, J_LINEAR_ALGEBRA,
+                        "GMRES it = %d\n", totit);
+         Jnlst().Printf(J_DETAILED, J_LINEAR_ALGEBRA,
+                        "  norm-wise backward error = %e\n", NRBE_inf);
+         Jnlst().Printf(J_DETAILED, J_LINEAR_ALGEBRA,
+                        "  ||r||2 = %e\n", rho);
+         Jnlst().Printf(J_DETAILED, J_LINEAR_ALGEBRA,
+                        "  ||r||2/||b||2 = %e\n", rho / b_nrm_2);
+         Jnlst().Printf(J_DETAILED, J_LINEAR_ALGEBRA,
+                        "  ||r||Inf = %e\n", resid_nrm_max);
+         Jnlst().Printf(J_DETAILED, J_LINEAR_ALGEBRA,
+                        "  ||r||Inf/||b||Inf = %e\n", resid_nrm_max / b_nrm_max);
+         Jnlst().Printf(J_DETAILED, J_LINEAR_ALGEBRA,
+                        "  ||A||Inf = %e\n", A_nrm_inf);
+      }
+
       if( NRBE_inf < tol && totit >= min_refinement_steps_)
       {
          resid.Copy( *V[0] );
@@ -1263,7 +1273,7 @@ bool PDFullSpaceSolver::GMRES(
          V.emplace_back( rhs.MakeNewIteratesVector() );
          V[it+1]->Set( 0. );
          ComputeResiduals(W, J_c, J_d, Px_L, Px_U, Pd_L, Pd_U, z_L, z_U, v_L, v_U, slack_x_L, slack_x_U,
-                          slack_s_L, slack_s_U, sigma_x, sigma_s, -1., 1., *NullVec, *Z[it], *V[it+1]);
+                          slack_s_L, slack_s_U, sigma_x, sigma_s, -1., 0., *x, *Z[it], *V[it+1]);
          {
             for( Index k=0; k<=it; k++ )
             {
@@ -1271,7 +1281,9 @@ bool PDFullSpaceSolver::GMRES(
                V[it+1]->Axpy( -H[k+it*ldH], *V[k] );
             }
          }
-         {  // second time for numerical stability, ToDo optional?
+         {
+            // second time for numerical stability,
+            // ToDo Brown-Hindmarsh condition
             for( Index k=0; k<=it; k++ )
             {
               auto tmp = V[it+1]->Dot( *V[k] );
@@ -1306,16 +1318,27 @@ bool PDFullSpaceSolver::GMRES(
 
          ComputeResiduals(W, J_c, J_d, Px_L, Px_U, Pd_L, Pd_U, z_L, z_U, v_L, v_U, slack_x_L, slack_x_U,
                           slack_s_L, slack_s_U, sigma_x, sigma_s, -1., 1., rhs, *x, resid);
-         Number resid_nrm_2 = resid.Nrm2();
-         resid_nrm_max = resid.Amax();
-         NRBE_inf = resid_nrm_max / ( A_nrm_inf * x->Amax() /*+ b_nrm_max*/ );
-         std::cout << "GMRES it. "           << totit
-                   << "  NRBE_inf= "          << std::setw(8) << NRBE_inf
-                   << "  ||r||2= "            << std::setw(8) << resid_nrm_2
-                   << "  ||r||2/||b||2= "     << std::setw(8) << resid_nrm_2 / b_nrm_2
-                   << "  ||r||Inf= "          << std::setw(8) << resid_nrm_max
-                   << "  ||r||Inf/||b||Inf= " << std::setw(8) << resid_nrm_max / b_nrm_max
-                   << std::endl;
+         NRBE_inf = ComputeResidualRatio( rhs, *x, resid, A_nrm_inf );
+
+         if( Jnlst().ProduceOutput(J_DETAILED, J_LINEAR_ALGEBRA) )
+         {
+            Number resid_nrm_2 = resid.Nrm2();
+            Number resid_nrm_max = resid.Amax();
+            Jnlst().Printf(J_DETAILED, J_LINEAR_ALGEBRA,
+                           "GMRES it = %d\n", totit);
+            Jnlst().Printf(J_DETAILED, J_LINEAR_ALGEBRA,
+                           "  norm-wise backward error = %e\n", NRBE_inf);
+            Jnlst().Printf(J_DETAILED, J_LINEAR_ALGEBRA,
+                           "  ||r||2 = %e\n", resid_nrm_2);
+            Jnlst().Printf(J_DETAILED, J_LINEAR_ALGEBRA,
+                           "  ||r||2/||b||2 = %e\n", resid_nrm_2 / b_nrm_2);
+            Jnlst().Printf(J_DETAILED, J_LINEAR_ALGEBRA,
+                           "  ||r||Inf = %e\n", resid_nrm_max);
+            Jnlst().Printf(J_DETAILED, J_LINEAR_ALGEBRA,
+                           "  ||r||Inf/||b||Inf = %e\n", resid_nrm_max / b_nrm_max);
+            Jnlst().Printf(J_DETAILED, J_LINEAR_ALGEBRA,
+                           "  ||A||Inf = %e\n", A_nrm_inf);
+         }
          if( (NRBE_inf < tol && totit >= min_refinement_steps_) ||
              (totit >= max_refinement_steps_) )
          {
@@ -1324,8 +1347,6 @@ bool PDFullSpaceSolver::GMRES(
          }
       }
    }
-
-   std::cout << std::setprecision(default_precision);
 
    res.Copy( *x );
    return ( totit < max_refinement_steps_ );
