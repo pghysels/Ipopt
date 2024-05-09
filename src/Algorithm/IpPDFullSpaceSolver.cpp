@@ -1195,16 +1195,14 @@ bool PDFullSpaceSolver::GMRES(
 {
    DBG_START_METH("PDFullSpaceSolver::GMRES", dbg_verbosity);
 
-   // ToDO work on res directly ?
-   auto x = res.MakeNewIteratesVectorCopy();
-
-   // Index restart = 10;
-   // if (restart > max_refinement_steps_)
-   //   restart = max_refinement_steps_;
-   Index restart = max_refinement_steps_;
+   Index restart = 3;
+   if( restart > max_refinement_steps_ )
+   {
+      restart = max_refinement_steps_;
+   }
    Index totit = 0, ldH = restart + 1;
    bool done = false;
-   Number tol = residual_ratio_max_, rho0 = 0., rho;
+   Number tol = residual_ratio_max_;
    Number b_nrm_2 = rhs.Nrm2(), b_nrm_max = rhs.Amax();
    Number A_nrm_inf = NrmInf(W, J_c, J_d, Px_L, Px_U, Pd_L, Pd_U, z_L, z_U, v_L, v_U,
                              slack_x_L, slack_x_U, slack_s_L, slack_s_U, resid);
@@ -1217,19 +1215,14 @@ bool PDFullSpaceSolver::GMRES(
       V[0]->Set( 0. );
       if ( !improve_solution )
       {
-         x->Set(0.);
+         res.Set(0.);
       }
       ComputeResiduals(W, J_c, J_d, Px_L, Px_U, Pd_L, Pd_U, z_L, z_U, v_L, v_U, slack_x_L, slack_x_U,
-                       slack_s_L, slack_s_U, sigma_x, sigma_s, -1., 1., rhs, *x, *V[0]);
-      improve_solution = true;  // after restart, improve x from previous cycle
-      rho = V[0]->Nrm2();
-      if( !totit )
-      {
-         rho0 = rho;
-      }
-
+                       slack_s_L, slack_s_U, sigma_x, sigma_s, -1., 1., rhs, res, *V[0]);
+      improve_solution = true;  // after restart, improve res from previous cycle
+      Number rho = V[0]->Nrm2();
       // norm-wise relative backward error, Inf norm
-      Number NRBE_inf = ComputeResidualRatio( rhs, *x, *V[0], A_nrm_inf );
+      Number NRBE_inf = ComputeResidualRatio( rhs, res, *V[0], A_nrm_inf );
 
       if( Jnlst().ProduceOutput(J_DETAILED, J_LINEAR_ALGEBRA) )
       {
@@ -1273,26 +1266,23 @@ bool PDFullSpaceSolver::GMRES(
          V.emplace_back( rhs.MakeNewIteratesVector() );
          V[it+1]->Set( 0. );
          ComputeResiduals(W, J_c, J_d, Px_L, Px_U, Pd_L, Pd_U, z_L, z_U, v_L, v_U, slack_x_L, slack_x_U,
-                          slack_s_L, slack_s_U, sigma_x, sigma_s, -1., 0., *x, *Z[it], *V[it+1]);
+                          slack_s_L, slack_s_U, sigma_x, sigma_s, -1., 0., res, *Z[it], *V[it+1]);
+         for( Index k=0; k<=it; k++ )
          {
-            for( Index k=0; k<=it; k++ )
-            {
-               H[k+it*ldH] = V[it+1]->Dot( *V[k] );
-               V[it+1]->Axpy( -H[k+it*ldH], *V[k] );
-            }
+            H[k+it*ldH] = V[it+1]->Dot( *V[k] );
+            V[it+1]->Axpy( -H[k+it*ldH], *V[k] );
          }
+         for( Index k=0; k<=it; k++ )
          {
-            // second time for numerical stability,
-            // ToDo Brown-Hindmarsh condition
-            for( Index k=0; k<=it; k++ )
-            {
-              auto tmp = V[it+1]->Dot( *V[k] );
-              H[k+it*ldH] += tmp;
-              V[it+1]->Axpy( -tmp, *V[k] );
-            }
+            auto tmp = V[it+1]->Dot( *V[k] );
+            H[k+it*ldH] += tmp;
+            V[it+1]->Axpy( -tmp, *V[k] );
          }
          H[it+1+it*ldH] = V[it+1]->Nrm2();
-         V[it+1]->Scal( 1. / H[it+1+it*ldH] );
+         if( H[it+1+it*ldH] != 0. )
+         {
+            V[it+1]->Scal( 1. / H[it+1+it*ldH] );
+         }
          for( Index k = 1; k < it+1; k++ )
          {
             auto gamma = givens_c[k-1]*H[k-1+it*ldH] + givens_s[k-1]*H[k+it*ldH];
@@ -1305,7 +1295,6 @@ bool PDFullSpaceSolver::GMRES(
          H[it+it*ldH] = givens_c[it]*H[it+it*ldH] + givens_s[it]*H[it+1+it*ldH];
          b_[it+1] = -givens_s[it]*b_[it];
          b_[it] = givens_c[it]*b_[it];
-         rho = std::abs( b_[it+1] );
 
          std::vector<Number> y = b_;
          for( Index k = it; k >= 0; k-- )
@@ -1314,11 +1303,11 @@ bool PDFullSpaceSolver::GMRES(
                y[k] -= H[k+i*ldH] * y[i];
             y[k] /= H[k+k*ldH];
          }
-         x->Axpy( y[it], *Z[it] );
+         res.Axpy( y[it], *Z[it] );
 
          ComputeResiduals(W, J_c, J_d, Px_L, Px_U, Pd_L, Pd_U, z_L, z_U, v_L, v_U, slack_x_L, slack_x_U,
-                          slack_s_L, slack_s_U, sigma_x, sigma_s, -1., 1., rhs, *x, resid);
-         NRBE_inf = ComputeResidualRatio( rhs, *x, resid, A_nrm_inf );
+                          slack_s_L, slack_s_U, sigma_x, sigma_s, -1., 1., rhs, res, resid);
+         NRBE_inf = ComputeResidualRatio( rhs, res, resid, A_nrm_inf );
 
          if( Jnlst().ProduceOutput(J_DETAILED, J_LINEAR_ALGEBRA) )
          {
@@ -1348,7 +1337,6 @@ bool PDFullSpaceSolver::GMRES(
       }
    }
 
-   res.Copy( *x );
    return ( totit < max_refinement_steps_ );
 }
 
