@@ -1141,13 +1141,13 @@ Number PDFullSpaceSolver::NrmInf(
 
    Pd_L.ComputeRowA1(*tmp.s_NonConst());
    Pd_U.ComputeRowA1(*tmp.s_NonConst(), false);
-   A_inf = std::max(A_inf, tmp.s_NonConst()->Amax() + 1. + delta_s);
+   A_inf = std::max(A_inf, tmp.s_NonConst()->Amax() + Number(1.) + delta_s);
 
    J_c.ComputeRowA1(*tmp.y_c_NonConst());
    A_inf = std::max(A_inf, tmp.y_c_NonConst()->Amax() + delta_c);
 
    J_d.ComputeRowA1(*tmp.y_d_NonConst());
-   A_inf = std::max(A_inf, tmp.y_d_NonConst()->Amax() + 1. + delta_d);
+   A_inf = std::max(A_inf, tmp.y_d_NonConst()->Amax() + Number(1.) + delta_d);
 
    Px_L.ComputeColA1(*tmp.z_L_NonConst());
    tmp.z_L_NonConst()->ElementWiseMultiply(z_L);
