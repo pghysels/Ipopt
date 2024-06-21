@@ -1113,24 +1113,43 @@ Number PDFullSpaceSolver::NrmInf(
    perturbHandler_->CurrentPerturbation(delta_x, delta_s, delta_c, delta_d);
 
    tmp.Set( 0. );
-   W.ComputeRowA1(*tmp.x_NonConst(), false);
-   J_c.ComputeColA1(*tmp.x_NonConst(), true);
-   J_d.ComputeColA1(*tmp.x_NonConst(), true);
-   Px_L.ComputeRowA1(*tmp.x_NonConst(), true);
-   Px_U.ComputeRowA1(*tmp.x_NonConst(), true);
+   bool norm_underestimated = false;
+   try
+   {
+      W.ComputeRowA1(*tmp.x_NonConst());
+   } catch (UNIMPLEMENTED_LINALG_METHOD_CALLED)
+   {
+      norm_underestimated = true;
+   }
+   try
+   {
+      J_c.ComputeColA1(*tmp.x_NonConst(), false);
+   } catch (UNIMPLEMENTED_LINALG_METHOD_CALLED)
+   {
+      norm_underestimated = true;
+   }
+   try
+   {
+      J_d.ComputeColA1(*tmp.x_NonConst(), false);
+   } catch (UNIMPLEMENTED_LINALG_METHOD_CALLED)
+   {
+      norm_underestimated = true;
+   }
+   Px_L.ComputeRowA1(*tmp.x_NonConst(), false);
+   Px_U.ComputeRowA1(*tmp.x_NonConst(), false);
    Number A_inf = tmp.x_NonConst()->Amax() + std::abs(delta_x);
 
-   Pd_L.ComputeRowA1(*tmp.s_NonConst(), false);
-   Pd_U.ComputeRowA1(*tmp.s_NonConst(), true);
+   Pd_L.ComputeRowA1(*tmp.s_NonConst());
+   Pd_U.ComputeRowA1(*tmp.s_NonConst(), false);
    A_inf = std::max(A_inf, tmp.s_NonConst()->Amax() + 1. + delta_s);
 
-   J_c.ComputeRowA1(*tmp.y_c_NonConst(), false);
+   J_c.ComputeRowA1(*tmp.y_c_NonConst());
    A_inf = std::max(A_inf, tmp.y_c_NonConst()->Amax() + delta_c);
 
-   J_d.ComputeRowA1(*tmp.y_d_NonConst(), false);
+   J_d.ComputeRowA1(*tmp.y_d_NonConst());
    A_inf = std::max(A_inf, tmp.y_d_NonConst()->Amax() + 1. + delta_d);
 
-   Px_L.ComputeColA1(*tmp.z_L_NonConst(), false);
+   Px_L.ComputeColA1(*tmp.z_L_NonConst());
    tmp.z_L_NonConst()->ElementWiseMultiply(z_L);
    tmp.z_L_NonConst()->ElementWiseAbs();
    auto tmp_slack_x_L = slack_x_L.MakeNewCopy();
@@ -1138,7 +1157,7 @@ Number PDFullSpaceSolver::NrmInf(
    tmp.z_L_NonConst()->Axpy(1., *tmp_slack_x_L);
    A_inf = std::max(A_inf, tmp.z_L_NonConst()->Amax());
 
-   Px_U.ComputeColA1(*tmp.z_U_NonConst(), false);
+   Px_U.ComputeColA1(*tmp.z_U_NonConst());
    tmp.z_U_NonConst()->ElementWiseMultiply(z_U);
    tmp.z_U_NonConst()->ElementWiseAbs();
    auto tmp_slack_x_U = slack_x_U.MakeNewCopy();
@@ -1146,7 +1165,7 @@ Number PDFullSpaceSolver::NrmInf(
    tmp.z_U_NonConst()->Axpy(1., *tmp_slack_x_U);
    A_inf = std::max(A_inf, tmp.z_U_NonConst()->Amax());
 
-   Pd_L.ComputeColA1(*tmp.v_L_NonConst(), false);
+   Pd_L.ComputeColA1(*tmp.v_L_NonConst());
    tmp.v_L_NonConst()->ElementWiseMultiply(v_L);
    tmp.v_L_NonConst()->ElementWiseAbs();
    auto tmp_slack_s_L = slack_s_L.MakeNewCopy();
@@ -1154,13 +1173,19 @@ Number PDFullSpaceSolver::NrmInf(
    tmp.v_L_NonConst()->Axpy(1., *tmp_slack_s_L);
    A_inf = std::max(A_inf, tmp.v_L_NonConst()->Amax());
 
-   Pd_U.ComputeColA1(*tmp.v_U_NonConst(), false);
+   Pd_U.ComputeColA1(*tmp.v_U_NonConst());
    tmp.v_U_NonConst()->ElementWiseMultiply(v_U);
    tmp.v_U_NonConst()->ElementWiseAbs();
    auto tmp_slack_s_U = slack_s_U.MakeNewCopy();
    tmp_slack_s_U->ElementWiseAbs();
    tmp.v_U_NonConst()->Axpy(1., *tmp_slack_s_U);
    A_inf = std::max(A_inf, tmp.v_U_NonConst()->Amax());
+
+   if( norm_underestimated )
+   {
+      Jnlst().Printf(J_DETAILED, J_LINEAR_ALGEBRA,
+                     "Cannot accurately compute matrix norm!\n");
+   }
 
    return A_inf;
 }
