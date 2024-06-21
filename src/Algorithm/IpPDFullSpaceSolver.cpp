@@ -8,7 +8,6 @@
 #include "IpDebug.hpp"
 
 #include <cmath>
-#include <iomanip>
 
 namespace Ipopt
 {
