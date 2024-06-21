@@ -1195,6 +1195,12 @@ bool PDFullSpaceSolver::GMRES(
 {
    DBG_START_METH("PDFullSpaceSolver::GMRES", dbg_verbosity);
 
+   // A larger GMRES restart is often better for convergence, but
+   // convergence should be fast since we use a direct solver as
+   // preconditioner. And restarting can improve attainable accuracy,
+   // see: Buttari, Alfredo, Nicholas J. Higham, Theo Mary, and
+   // Bastien Vieuble. "A modular framework for the backward error
+   // analysis of GMRES." (2024).
    Index restart = 3;
    if( restart > max_refinement_steps_ )
    {
