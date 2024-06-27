@@ -1273,7 +1273,8 @@ bool PDFullSpaceSolver::GMRES(
                         "  ||A||Inf = %e\n", A_nrm_inf);
       }
 
-      if( NRBE_inf < tol && totit >= min_refinement_steps_)
+      if( ( NRBE_inf < tol && totit >= min_refinement_steps_ ) ||
+          rho < std::numeric_limits<Number>::epsilon() )
       {
          resid.Copy( *V[0] );
          done = true;
