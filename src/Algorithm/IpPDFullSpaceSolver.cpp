@@ -1152,7 +1152,7 @@ Number PDFullSpaceSolver::NrmInf(
    Px_L.ComputeColA1(*tmp.z_L_NonConst());
    tmp.z_L_NonConst()->ElementWiseMultiply(z_L);
    tmp.z_L_NonConst()->ElementWiseAbs();
-   auto tmp_slack_x_L = slack_x_L.MakeNewCopy();
+   SmartPtr<Vector> tmp_slack_x_L = slack_x_L.MakeNewCopy();
    tmp_slack_x_L->ElementWiseAbs();
    tmp.z_L_NonConst()->Axpy(1., *tmp_slack_x_L);
    A_inf = std::max(A_inf, tmp.z_L_NonConst()->Amax());
@@ -1160,7 +1160,7 @@ Number PDFullSpaceSolver::NrmInf(
    Px_U.ComputeColA1(*tmp.z_U_NonConst());
    tmp.z_U_NonConst()->ElementWiseMultiply(z_U);
    tmp.z_U_NonConst()->ElementWiseAbs();
-   auto tmp_slack_x_U = slack_x_U.MakeNewCopy();
+   SmartPtr<Vector> tmp_slack_x_U = slack_x_U.MakeNewCopy();
    tmp_slack_x_U->ElementWiseAbs();
    tmp.z_U_NonConst()->Axpy(1., *tmp_slack_x_U);
    A_inf = std::max(A_inf, tmp.z_U_NonConst()->Amax());
@@ -1168,7 +1168,7 @@ Number PDFullSpaceSolver::NrmInf(
    Pd_L.ComputeColA1(*tmp.v_L_NonConst());
    tmp.v_L_NonConst()->ElementWiseMultiply(v_L);
    tmp.v_L_NonConst()->ElementWiseAbs();
-   auto tmp_slack_s_L = slack_s_L.MakeNewCopy();
+   SmartPtr<Vector> tmp_slack_s_L = slack_s_L.MakeNewCopy();
    tmp_slack_s_L->ElementWiseAbs();
    tmp.v_L_NonConst()->Axpy(1., *tmp_slack_s_L);
    A_inf = std::max(A_inf, tmp.v_L_NonConst()->Amax());
@@ -1176,7 +1176,7 @@ Number PDFullSpaceSolver::NrmInf(
    Pd_U.ComputeColA1(*tmp.v_U_NonConst());
    tmp.v_U_NonConst()->ElementWiseMultiply(v_U);
    tmp.v_U_NonConst()->ElementWiseAbs();
-   auto tmp_slack_s_U = slack_s_U.MakeNewCopy();
+   SmartPtr<Vector> tmp_slack_s_U = slack_s_U.MakeNewCopy();
    tmp_slack_s_U->ElementWiseAbs();
    tmp.v_U_NonConst()->Axpy(1., *tmp_slack_s_U);
    A_inf = std::max(A_inf, tmp.v_U_NonConst()->Amax());
@@ -1240,7 +1240,7 @@ bool PDFullSpaceSolver::GMRES(
    {
       std::vector<Number> givens_c(restart), givens_s(restart),
         b_(restart+1), H(restart*(restart+1));
-      std::vector<SmartPtr<IteratesVector>> V, Z;
+      std::vector<SmartPtr<IteratesVector> > V, Z;
       V.emplace_back(rhs.MakeNewIteratesVector());
       V[0]->Set( 0. );
       if ( !improve_solution )
@@ -1306,7 +1306,7 @@ bool PDFullSpaceSolver::GMRES(
          }
          for( Index k=0; k<=it; k++ )
          {
-            auto tmp = V[it+1]->Dot( *V[k] );
+            Number tmp = V[it+1]->Dot( *V[k] );
             H[k+it*ldH] += tmp;
             V[it+1]->Axpy( -tmp, *V[k] );
          }
@@ -1317,11 +1317,11 @@ bool PDFullSpaceSolver::GMRES(
          }
          for( Index k = 1; k < it+1; k++ )
          {
-            auto gamma = givens_c[k-1]*H[k-1+it*ldH] + givens_s[k-1]*H[k+it*ldH];
+            Number gamma = givens_c[k-1]*H[k-1+it*ldH] + givens_s[k-1]*H[k+it*ldH];
             H[k+it*ldH] = -givens_s[k-1]*H[k-1+it*ldH] + givens_c[k-1]*H[k+it*ldH];
             H[k-1+it*ldH] = gamma;
          }
-         auto delta = std::sqrt( H[it+it*ldH]*H[it+it*ldH] + H[it+1+it*ldH]*H[it+1+it*ldH] );
+         Number delta = std::sqrt( H[it+it*ldH]*H[it+it*ldH] + H[it+1+it*ldH]*H[it+1+it*ldH] );
          givens_c[it] = H[it+it*ldH] / delta;
          givens_s[it] = H[it+1+it*ldH] / delta;
          H[it+it*ldH] = givens_c[it]*H[it+it*ldH] + givens_s[it]*H[it+1+it*ldH];
