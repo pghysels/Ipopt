@@ -1257,7 +1257,7 @@ bool PDFullSpaceSolver::GMRES(
       Number resid_nrm_max = resid.Amax();
       std::cout << "GMRES it = " << totit << std::endl
                 << "  norm-wise backward error = " << NRBE_inf << std::endl
-                << "  ||r||2 = resid_nrm_2" << std::endl
+                << "  ||r||2 = " << rho << std::endl
                 << "  ||r||2/||b||2 = " << rho / b_nrm_2 << std::endl
                 << "  ||r||Inf = " << resid_nrm_max << std::endl
                 << "  ||r||Inf/||b||Inf = " << resid_nrm_max / b_nrm_max << std::endl
@@ -1283,6 +1283,7 @@ bool PDFullSpaceSolver::GMRES(
       }
 
       if( ( NRBE_inf < tol && totit >= min_refinement_steps_ ) ||
+            NRBE_inf < std::numeric_limits<Number>::epsilon() ||
           rho < std::numeric_limits<Number>::epsilon() )
       {
          resid.Copy( *V[0] );
@@ -1353,7 +1354,7 @@ bool PDFullSpaceSolver::GMRES(
          Number resid_nrm_max = resid.Amax();
          std::cout << "GMRES it = " << totit << std::endl
                    << "  norm-wise backward error = " << NRBE_inf << std::endl
-                   << "  ||r||2 = resid_nrm_2" << std::endl
+                   << "  ||r||2 = " << resid_nrm_2 << std::endl
                    << "  ||r||2/||b||2 = " << resid_nrm_2 / b_nrm_2 << std::endl
                    << "  ||r||Inf = " << resid_nrm_max << std::endl
                    << "  ||r||Inf/||b||Inf = " << resid_nrm_max / b_nrm_max << std::endl
@@ -1379,6 +1380,7 @@ bool PDFullSpaceSolver::GMRES(
                            "  ||A||Inf = %e\n", A_nrm_inf);
          }
          if( (NRBE_inf < tol && totit >= min_refinement_steps_) ||
+              NRBE_inf < std::numeric_limits<Number>::epsilon() ||
              (totit >= max_refinement_steps_) )
          {
             done = true;
