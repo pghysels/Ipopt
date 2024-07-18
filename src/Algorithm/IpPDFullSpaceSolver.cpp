@@ -1152,7 +1152,7 @@ Number PDFullSpaceSolver::NrmInf(
    Px_L.ComputeColA1(*tmp.z_L_NonConst());
    tmp.z_L_NonConst()->ElementWiseMultiply(z_L);
    tmp.z_L_NonConst()->ElementWiseAbs();
-   SmartPtr<Vector> tmp_slack_x_L = slack_x_L.MakeNewCopy();
+   auto tmp_slack_x_L = slack_x_L.MakeNewCopy();
    tmp_slack_x_L->ElementWiseAbs();
    tmp.z_L_NonConst()->Axpy(1., *tmp_slack_x_L);
    A_inf = std::max(A_inf, tmp.z_L_NonConst()->Amax());
@@ -1160,7 +1160,7 @@ Number PDFullSpaceSolver::NrmInf(
    Px_U.ComputeColA1(*tmp.z_U_NonConst());
    tmp.z_U_NonConst()->ElementWiseMultiply(z_U);
    tmp.z_U_NonConst()->ElementWiseAbs();
-   SmartPtr<Vector> tmp_slack_x_U = slack_x_U.MakeNewCopy();
+   auto tmp_slack_x_U = slack_x_U.MakeNewCopy();
    tmp_slack_x_U->ElementWiseAbs();
    tmp.z_U_NonConst()->Axpy(1., *tmp_slack_x_U);
    A_inf = std::max(A_inf, tmp.z_U_NonConst()->Amax());
@@ -1168,7 +1168,7 @@ Number PDFullSpaceSolver::NrmInf(
    Pd_L.ComputeColA1(*tmp.v_L_NonConst());
    tmp.v_L_NonConst()->ElementWiseMultiply(v_L);
    tmp.v_L_NonConst()->ElementWiseAbs();
-   SmartPtr<Vector> tmp_slack_s_L = slack_s_L.MakeNewCopy();
+   auto tmp_slack_s_L = slack_s_L.MakeNewCopy();
    tmp_slack_s_L->ElementWiseAbs();
    tmp.v_L_NonConst()->Axpy(1., *tmp_slack_s_L);
    A_inf = std::max(A_inf, tmp.v_L_NonConst()->Amax());
@@ -1176,7 +1176,7 @@ Number PDFullSpaceSolver::NrmInf(
    Pd_U.ComputeColA1(*tmp.v_U_NonConst());
    tmp.v_U_NonConst()->ElementWiseMultiply(v_U);
    tmp.v_U_NonConst()->ElementWiseAbs();
-   SmartPtr<Vector> tmp_slack_s_U = slack_s_U.MakeNewCopy();
+   auto tmp_slack_s_U = slack_s_U.MakeNewCopy();
    tmp_slack_s_U->ElementWiseAbs();
    tmp.v_U_NonConst()->Axpy(1., *tmp_slack_s_U);
    A_inf = std::max(A_inf, tmp.v_U_NonConst()->Amax());
@@ -1236,14 +1236,11 @@ bool PDFullSpaceSolver::GMRES(
    Number b_nrm_2 = rhs.Nrm2(), b_nrm_max = rhs.Amax();
    Number A_nrm_inf = NrmInf(W, J_c, J_d, Px_L, Px_U, Pd_L, Pd_U, z_L, z_U, v_L, v_U,
                              slack_x_L, slack_x_U, slack_s_L, slack_s_U, resid);
-   // for first loop
-   Number residual_ratio_old = std::numeric_limits<Number>::max();
-   Number NRBE_inf = std::numeric_limits<Number>::max();
    while ( !done )
    {
       std::vector<Number> givens_c(restart), givens_s(restart),
         b_(restart+1), H(restart*(restart+1));
-      std::vector<SmartPtr<IteratesVector> > V, Z;
+      std::vector<SmartPtr<IteratesVector>> V, Z;
       V.emplace_back(rhs.MakeNewIteratesVector());
       V[0]->Set( 0. );
       if ( !improve_solution )
@@ -1254,9 +1251,8 @@ bool PDFullSpaceSolver::GMRES(
                        slack_s_L, slack_s_U, sigma_x, sigma_s, -1., 1., rhs, res, *V[0]);
       improve_solution = true;  // after restart, improve res from previous cycle
       Number rho = V[0]->Nrm2();
-      residual_ratio_old = NRBE_inf;
       // norm-wise relative backward error, Inf norm
-      NRBE_inf = ComputeResidualRatio( rhs, res, *V[0], A_nrm_inf );
+      Number NRBE_inf = ComputeResidualRatio( rhs, res, *V[0], A_nrm_inf );
 
       Number resid_nrm_max = resid.Amax();
       std::cout << "GMRES it = " << totit << std::endl
@@ -1287,8 +1283,7 @@ bool PDFullSpaceSolver::GMRES(
       }
 
       if( ( NRBE_inf < tol && totit >= min_refinement_steps_ ) ||
-          rho < std::numeric_limits<Number>::epsilon() ||
-          NRBE_inf > residual_improvement_factor_ * residual_ratio_old )
+          rho < std::numeric_limits<Number>::epsilon() )
       {
          resid.Copy( *V[0] );
          done = true;
@@ -1319,7 +1314,7 @@ bool PDFullSpaceSolver::GMRES(
          }
          for( Index k=0; k<=it; k++ )
          {
-            Number tmp = V[it+1]->Dot( *V[k] );
+            auto tmp = V[it+1]->Dot( *V[k] );
             H[k+it*ldH] += tmp;
             V[it+1]->Axpy( -tmp, *V[k] );
          }
@@ -1330,11 +1325,11 @@ bool PDFullSpaceSolver::GMRES(
          }
          for( Index k = 1; k < it+1; k++ )
          {
-            Number gamma = givens_c[k-1]*H[k-1+it*ldH] + givens_s[k-1]*H[k+it*ldH];
+            auto gamma = givens_c[k-1]*H[k-1+it*ldH] + givens_s[k-1]*H[k+it*ldH];
             H[k+it*ldH] = -givens_s[k-1]*H[k-1+it*ldH] + givens_c[k-1]*H[k+it*ldH];
             H[k-1+it*ldH] = gamma;
          }
-         Number delta = std::sqrt( H[it+it*ldH]*H[it+it*ldH] + H[it+1+it*ldH]*H[it+1+it*ldH] );
+         auto delta = std::sqrt( H[it+it*ldH]*H[it+it*ldH] + H[it+1+it*ldH]*H[it+1+it*ldH] );
          givens_c[it] = H[it+it*ldH] / delta;
          givens_s[it] = H[it+1+it*ldH] / delta;
          H[it+it*ldH] = givens_c[it]*H[it+it*ldH] + givens_s[it]*H[it+1+it*ldH];
@@ -1352,7 +1347,6 @@ bool PDFullSpaceSolver::GMRES(
 
          ComputeResiduals(W, J_c, J_d, Px_L, Px_U, Pd_L, Pd_U, z_L, z_U, v_L, v_U, slack_x_L, slack_x_U,
                           slack_s_L, slack_s_U, sigma_x, sigma_s, -1., 1., rhs, res, resid);
-         residual_ratio_old = NRBE_inf;
          NRBE_inf = ComputeResidualRatio( rhs, res, resid, A_nrm_inf );
 
          Number resid_nrm_2 = resid.Nrm2();
@@ -1385,8 +1379,7 @@ bool PDFullSpaceSolver::GMRES(
                            "  ||A||Inf = %e\n", A_nrm_inf);
          }
          if( (NRBE_inf < tol && totit >= min_refinement_steps_) ||
-             (totit >= max_refinement_steps_) ||
-             (NRBE_inf > residual_improvement_factor_ * residual_ratio_old ) )
+             (totit >= max_refinement_steps_) )
          {
             done = true;
             break;
