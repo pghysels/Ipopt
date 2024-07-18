@@ -1254,18 +1254,9 @@ bool PDFullSpaceSolver::GMRES(
       // norm-wise relative backward error, Inf norm
       Number NRBE_inf = ComputeResidualRatio( rhs, res, *V[0], A_nrm_inf );
 
-      Number resid_nrm_max = resid.Amax();
-      std::cout << "GMRES it = " << totit << std::endl
-                << "  norm-wise backward error = " << NRBE_inf << std::endl
-                << "  ||r||2 = " << rho << std::endl
-                << "  ||r||2/||b||2 = " << rho / b_nrm_2 << std::endl
-                << "  ||r||Inf = " << resid_nrm_max << std::endl
-                << "  ||r||Inf/||b||Inf = " << resid_nrm_max / b_nrm_max << std::endl
-                << "  ||A||Inf = " << A_nrm_inf << std::endl;
-
       if( Jnlst().ProduceOutput(J_DETAILED, J_LINEAR_ALGEBRA) )
       {
-         // Number resid_nrm_max = resid.Amax();
+         Number resid_nrm_max = resid.Amax();
          Jnlst().Printf(J_DETAILED, J_LINEAR_ALGEBRA,
                         "GMRES it = %d\n", totit);
          Jnlst().Printf(J_DETAILED, J_LINEAR_ALGEBRA,
@@ -1350,20 +1341,10 @@ bool PDFullSpaceSolver::GMRES(
                           slack_s_L, slack_s_U, sigma_x, sigma_s, -1., 1., rhs, res, resid);
          NRBE_inf = ComputeResidualRatio( rhs, res, resid, A_nrm_inf );
 
-         Number resid_nrm_2 = resid.Nrm2();
-         Number resid_nrm_max = resid.Amax();
-         std::cout << "GMRES it = " << totit << std::endl
-                   << "  norm-wise backward error = " << NRBE_inf << std::endl
-                   << "  ||r||2 = " << resid_nrm_2 << std::endl
-                   << "  ||r||2/||b||2 = " << resid_nrm_2 / b_nrm_2 << std::endl
-                   << "  ||r||Inf = " << resid_nrm_max << std::endl
-                   << "  ||r||Inf/||b||Inf = " << resid_nrm_max / b_nrm_max << std::endl
-                   << "  ||A||Inf = " << A_nrm_inf << std::endl;
-
          if( Jnlst().ProduceOutput(J_DETAILED, J_LINEAR_ALGEBRA) )
          {
-            // Number resid_nrm_2 = resid.Nrm2();
-            // Number resid_nrm_max = resid.Amax();
+            Number resid_nrm_2 = resid.Nrm2();
+            Number resid_nrm_max = resid.Amax();
             Jnlst().Printf(J_DETAILED, J_LINEAR_ALGEBRA,
                            "GMRES it = %d\n", totit);
             Jnlst().Printf(J_DETAILED, J_LINEAR_ALGEBRA,
